@@ -38,6 +38,10 @@ const ImageFactoryUsernameEnv = "TALEMU_IMAGE_FACTORY_USERNAME"
 // image factory. See [ImageFactoryUsernameEnv].
 const ImageFactoryPasswordEnv = "TALEMU_IMAGE_FACTORY_PASSWORD"
 
+// ImageFactoryTokenEnv is the environment variable carrying the optional image factory API token, the
+// alternative to the basic auth pair.
+const ImageFactoryTokenEnv = "TALEMU_IMAGE_FACTORY_TOKEN"
+
 // StuckBootingKernelArg is a magic kernel arg that makes the emulated machine act broken as long as the
 // arg is part of its boot media: the machine stays in the booting stage, never reports ready, and its
 // Kubernetes node reports not ready. It simulates a machine broken by a bad kernel args or extensions

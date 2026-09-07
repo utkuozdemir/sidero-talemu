@@ -19,12 +19,12 @@ import (
 func TestNewFactorySourceRejectsRelativeURL(t *testing.T) {
 	t.Parallel()
 
-	source, err := NewFactorySource(t.TempDir(), "http://factory.local:8080/base", "user", "password", zaptest.NewLogger(t))
+	source, err := NewFactorySource(t.TempDir(), "http://factory.local:8080/base", Credentials{Username: "user", Password: "password"}, zaptest.NewLogger(t))
 	require.NoError(t, err)
 	assert.Equal(t, "http://factory.local:8080/base", source.BaseURL())
 	assert.Equal(t, []string{"factory.local:8080"}, source.FactoryHosts())
 
-	_, err = NewFactorySource(t.TempDir(), "factory.local", "", "", zaptest.NewLogger(t))
+	_, err = NewFactorySource(t.TempDir(), "factory.local", Credentials{}, zaptest.NewLogger(t))
 	require.Error(t, err, "a URL without a scheme would only fail later, at the request")
 }
 
@@ -33,10 +33,13 @@ func TestNewFactorySourceRejectsRelativeURL(t *testing.T) {
 func TestNewFactorySourceRejectsHalfCredentials(t *testing.T) {
 	t.Parallel()
 
-	_, err := NewFactorySource(t.TempDir(), "http://factory.local:8080", "user", "", zaptest.NewLogger(t))
+	_, err := NewFactorySource(t.TempDir(), "http://factory.local:8080", Credentials{Username: "user"}, zaptest.NewLogger(t))
 	require.Error(t, err)
 
-	_, err = NewFactorySource(t.TempDir(), "http://factory.local:8080", "", "password", zaptest.NewLogger(t))
+	_, err = NewFactorySource(t.TempDir(), "http://factory.local:8080", Credentials{Password: "password"}, zaptest.NewLogger(t))
+	require.Error(t, err)
+
+	_, err = NewFactorySource(t.TempDir(), "http://factory.local:8080", Credentials{Username: "user", Password: "password", Token: "token"}, zaptest.NewLogger(t))
 	require.Error(t, err)
 }
 
@@ -88,7 +91,7 @@ func TestFactoryEnterprise(t *testing.T) {
 
 	// The configured factory is reached by its base URL, so a plain-HTTP one keeps working. Any other host is
 	// only known by name, so it is assumed to be HTTPS and is not reachable in this test.
-	source, err := NewFactorySource(t.TempDir(), enterprise.URL, "", "", zaptest.NewLogger(t))
+	source, err := NewFactorySource(t.TempDir(), enterprise.URL, Credentials{}, zaptest.NewLogger(t))
 	require.NoError(t, err)
 
 	// no factory host means the image came from no factory, so there is nothing to probe
@@ -107,14 +110,14 @@ func TestFactoryEnterprise(t *testing.T) {
 
 	// A community factory and one that refuses the probe, each reached as the configured factory of their own
 	// source so that the plain-HTTP base URL is used.
-	communitySource, err := NewFactorySource(t.TempDir(), community.URL, "", "", zaptest.NewLogger(t))
+	communitySource, err := NewFactorySource(t.TempDir(), community.URL, Credentials{}, zaptest.NewLogger(t))
 	require.NoError(t, err)
 
 	isEnterprise, err = communitySource.IsEnterprise(t.Context(), "v1.14.0", hostOf(t, community.URL))
 	require.NoError(t, err)
 	assert.False(t, isEnterprise)
 
-	refusedSource, err := NewFactorySource(t.TempDir(), refused.URL, "", "", zaptest.NewLogger(t))
+	refusedSource, err := NewFactorySource(t.TempDir(), refused.URL, Credentials{}, zaptest.NewLogger(t))
 	require.NoError(t, err)
 
 	isEnterprise, err = refusedSource.IsEnterprise(t.Context(), "v1.14.0", hostOf(t, refused.URL))
@@ -126,11 +129,49 @@ func TestFactoryProbeURLFor(t *testing.T) {
 	t.Parallel()
 
 	// A plain-HTTP configured factory, to check it is used as it was given rather than assumed to be HTTPS.
-	source, err := NewFactorySource(t.TempDir(), "http://factory.local:8080", "", "", zaptest.NewLogger(t))
+	source, err := NewFactorySource(t.TempDir(), "http://factory.local:8080", Credentials{}, zaptest.NewLogger(t))
 	require.NoError(t, err)
 
 	assert.Empty(t, source.probeURLFor(""), "no host means no factory")
 	assert.Equal(t, "http://factory.local:8080", source.probeURLFor("factory.local:8080"))
 	assert.Equal(t, "https://factory.example.com", source.probeURLFor("factory.example.com"),
 		"an image reference carries no scheme, so another factory is assumed to be HTTPS")
+}
+
+func TestFactoryCredentialsOnTheWire(t *testing.T) {
+	t.Parallel()
+
+	for _, tt := range []struct {
+		name          string
+		creds         Credentials
+		authorization string
+	}{
+		{name: "none", creds: Credentials{}},
+		{name: "basic auth", creds: Credentials{Username: "user", Password: "hunter2"}, authorization: "Basic dXNlcjpodW50ZXIy"},
+		{name: "token", creds: Credentials{Token: "omni-token"}, authorization: "Bearer omni-token"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			var received atomic.Pointer[string]
+
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				header := r.Header.Get("Authorization")
+				received.Store(&header)
+
+				w.Header().Set("Content-Type", "application/json")
+				w.Write([]byte(`[]`)) //nolint:errcheck
+			}))
+			t.Cleanup(server.Close)
+
+			source, err := NewFactorySource(t.TempDir(), server.URL, tt.creds, zaptest.NewLogger(t))
+			require.NoError(t, err)
+
+			_, err = source.client.Versions(t.Context())
+			require.NoError(t, err)
+
+			require.NotNil(t, received.Load())
+			require.Equal(t, tt.authorization, *received.Load())
+		})
+	}
 }

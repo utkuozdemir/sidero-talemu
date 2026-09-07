@@ -50,8 +50,7 @@ func resolveBootMedia(ctx context.Context, logger *zap.Logger) (*bootMedia, erro
 // its schematic.
 func imagerBootMedia(logger *zap.Logger) (*bootMedia, error) {
 	source, err := bootmedia.NewFactorySource(
-		cfg.schematicCacheDir, cfg.imageFactoryBaseURL,
-		os.Getenv(emuconst.ImageFactoryUsernameEnv), os.Getenv(emuconst.ImageFactoryPasswordEnv),
+		cfg.schematicCacheDir, cfg.imageFactoryBaseURL, factoryCredentials(),
 		logger.With(zap.String("component", "boot_media")),
 	)
 	if err != nil {
@@ -75,8 +74,7 @@ func imagerBootMedia(logger *zap.Logger) (*bootMedia, error) {
 // rediscover it forever. Machines booted from media nobody has would never come up either.
 func factoryBootMedia(ctx context.Context, logger *zap.Logger) (*bootMedia, error) {
 	source, err := bootmedia.NewFactorySource(
-		cfg.schematicCacheDir, cfg.imageFactoryBaseURL,
-		os.Getenv(emuconst.ImageFactoryUsernameEnv), os.Getenv(emuconst.ImageFactoryPasswordEnv),
+		cfg.schematicCacheDir, cfg.imageFactoryBaseURL, factoryCredentials(),
 		logger.With(zap.String("component", "boot_media")),
 	)
 	if err != nil {
@@ -102,4 +100,12 @@ func factoryBootMedia(ctx context.Context, logger *zap.Logger) (*bootMedia, erro
 		schematicID: cfg.schematicID,
 		kernelArgs:  strings.Join(sch.Customization.ExtraKernelArgs, " "),
 	}, nil
+}
+
+func factoryCredentials() bootmedia.Credentials {
+	return bootmedia.Credentials{
+		Username: os.Getenv(emuconst.ImageFactoryUsernameEnv),
+		Password: os.Getenv(emuconst.ImageFactoryPasswordEnv),
+		Token:    os.Getenv(emuconst.ImageFactoryTokenEnv),
+	}
 }

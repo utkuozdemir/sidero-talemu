@@ -24,7 +24,7 @@ services:
 ```
 
 The schematic is read from the image factory at startup, and startup fails if it does not hold that schematic, since machines booted from media nobody has would never come up either.
-Use `--image-factory-base-url` for a factory other than the public one, and `TALEMU_IMAGE_FACTORY_USERNAME` / `TALEMU_IMAGE_FACTORY_PASSWORD` for one that requires authentication.
+Use `--image-factory-base-url` for a factory other than the public one, and `TALEMU_IMAGE_FACTORY_TOKEN` (an API token) or `TALEMU_IMAGE_FACTORY_USERNAME` / `TALEMU_IMAGE_FACTORY_PASSWORD` (basic auth) for one that requires authentication.
 
 ### Without a factory
 
