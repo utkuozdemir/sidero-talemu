@@ -139,22 +139,18 @@ func (ctrl *ManagerController) Run(ctx context.Context, r controller.Runtime, lo
 				continue
 			}
 		case <-r.EventCh():
-		}
-
-		// if the node UUID was overridden (e.g. by Omni resolving a UUID conflict via the UUIDOverride
-		// META key), drop the cached provision data so the machine re-provisions with the new UUID.
-		uuidChanged, err := ctrl.nodeUUIDChanged(ctx, r)
-		if err != nil {
-			return err
-		}
-
-		if uuidChanged {
-			logger.Info("node UUID changed, re-provisioning", zap.String("node_uuid", ctrl.pd.nodeUUID))
-
+			// An input changed (the SideroLink config, the machine UUID or the unique machine token), so the
+			// cached provision data is stale. Drop it to provision again immediately, same as Talos does.
+			// Omni waits for the machine to provision again with the unique machine token before creating
+			// the Link for it, so keeping the stale data here delayed the Link until the WireGuard peer was
+			// considered down.
 			ctrl.pd = provisionData{}
 		}
 
-		var provision optional.Optional[provisionData]
+		var (
+			provision optional.Optional[provisionData]
+			err       error
+		)
 
 		if ctrl.pd.IsEmpty() {
 			provision, err = ctrl.provision(ctx, r, logger)
@@ -290,25 +286,6 @@ func (ctrl *ManagerController) Run(ctx context.Context, r controller.Runtime, lo
 			zap.String("node_address", nodeAddress.String()),
 		)
 	}
-}
-
-// nodeUUIDChanged reports whether the machine is already provisioned but its current node UUID
-// differs from the one used for the active provision data.
-func (ctrl *ManagerController) nodeUUIDChanged(ctx context.Context, r controller.Runtime) (bool, error) {
-	if ctrl.pd.IsEmpty() {
-		return false, nil
-	}
-
-	sysInfo, err := safe.ReaderGetByID[*hardware.SystemInformation](ctx, r, hardware.SystemInformationID)
-	if err != nil {
-		if state.IsNotFoundError(err) {
-			return false, nil
-		}
-
-		return false, fmt.Errorf("failed to get system information: %w", err)
-	}
-
-	return sysInfo.TypedSpec().UUID != ctrl.pd.nodeUUID, nil
 }
 
 func (ctrl *ManagerController) provision(ctx context.Context, r controller.Runtime, logger *zap.Logger) (optional.Optional[provisionData], error) {
